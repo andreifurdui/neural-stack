@@ -19,7 +19,7 @@ class ScaledDotProductAttention(nn.Module):
         """
         super(ScaledDotProductAttention, self).__init__()
 
-        self.scaling_factor = torch.sqrt(dim_model)
+        self.scaling_factor = dim_model ** 0.5
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
