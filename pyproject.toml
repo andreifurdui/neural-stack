@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural-stack"
+version = "0.1.0"
+description = "A learning project for transformer fundamentals and neural network implementations"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=2.0.0",
+    "pandas>=2.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter",
+]
+
+[tool.setuptools]
+packages = ["neural_stack"]
