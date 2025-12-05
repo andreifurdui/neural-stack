@@ -10,7 +10,7 @@ class PatchEmbedding(nn.Module):
     and adds positional embeddings and a class token.
     """
 
-    def __init__(self, img_size: Tuple[int, int], patch_size: int, in_channels: int, embed_dim: int) -> None:
+    def __init__(self, img_size: Tuple[int, int], patch_size: int, in_channels: int, embed_dim: int, positional_embedding: str = 'learned', use_cls_token: bool = True) -> None:
         """Initialize the patch embedding layer.
 
         Args:
@@ -18,18 +18,32 @@ class PatchEmbedding(nn.Module):
             patch_size: Size of each square patch.
             in_channels: Number of input channels (e.g., 3 for RGB).
             embed_dim: Dimension of the embedding space.
+            positional_embedding: Type of positional embedding ('learned', 'none').
+            use_cls_token: Whether to use a class token. Default: True.
         """
         super(PatchEmbedding, self).__init__()
+
         assert (img_size[0] * img_size[1]) % (patch_size ** 2) == 0, "Image dimensions must be divisible by the patch size."
+        assert positional_embedding in ['learned', 'none'], "Positional embedding must be either 'learned' or 'none'."
 
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = (img_size[0] * img_size[1]) // patch_size ** 2
+        self.use_cls_token = use_cls_token
         
         self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
 
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches + 1, embed_dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+        cls_token_len = 1 if use_cls_token else 0
+
+        if positional_embedding == 'none':
+            self.pos_embedding = nn.Parameter(torch.zeros(1, self.num_patches + cls_token_len, embed_dim), requires_grad=False)
+        else:
+            self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches + cls_token_len, embed_dim))
+
+        if use_cls_token:
+            self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+        else:
+            self.cls_token = None
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """Apply patch embedding to input images.
@@ -38,15 +52,16 @@ class PatchEmbedding(nn.Module):
             images: Input tensor of shape [B, C, H, W]
 
         Returns:
-            Embedded patches with positional encoding and class token of shape [B, num_patches + 1, embed_dim]
+            Embedded patches with positional encoding and class token of shape [B, num_patches + cls_token_len, embed_dim]
         """
         batch_size = images.shape[0]
 
         image_patches = self.proj(images)           # [B, embed_dim, H/P, W/P]
         image_patches = image_patches.flatten(2).transpose(-2, -1)    # [B, num_patches, embed_dim]
         
-        image_patches = torch.concat((self.cls_token.repeat(batch_size, 1, 1), image_patches), dim=1)    # [B, num_patches + 1, embed_dim]
-        image_patches = image_patches + self.pos_embedding                      # [B, num_patches + 1, embed_dim]
+        if self.use_cls_token:
+            image_patches = torch.concat((self.cls_token.repeat(batch_size, 1, 1), image_patches), dim=1)    # [B, num_patches + cls_token_len, embed_dim]
+        image_patches = image_patches + self.pos_embedding                      # [B, num_patches + cls_token_len, embed_dim]
 
         return image_patches
 
@@ -101,13 +116,14 @@ class TransformerBlock(nn.Module):
     with residual connections.
     """
 
-    def __init__(self, embed_dim: int, num_heads: int, mlp_ratio: float) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, mlp_ratio: float, dropout: float) -> None:
         """Initialize the transformer block.
 
         Args:
             embed_dim: Embedding dimension.
             num_heads: Number of attention heads.
             mlp_ratio: Expansion ratio for the MLP hidden dimension.
+            dropout: Dropout probability.
         """
         super(TransformerBlock, self).__init__()
 
@@ -118,7 +134,7 @@ class TransformerBlock(nn.Module):
         )
 
         self.layer_norm_2 = nn.LayerNorm(embed_dim)
-        self.mlp_block = MLPBlock(embed_dim, mlp_ratio)
+        self.mlp_block = MLPBlock(embed_dim, mlp_ratio, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply transformer block transformation.
@@ -155,7 +171,9 @@ class VisionTransformer(nn.Module):
         num_layers: int,
         mlp_ratio: float,
         dropout: float,
-        num_classes: int
+        num_classes: int,
+        positional_embedding: str = 'learned',
+        use_cls_token: bool = True
     ) -> None:
         """Initialize the Vision Transformer.
 
@@ -169,13 +187,17 @@ class VisionTransformer(nn.Module):
             mlp_ratio: Expansion ratio for MLP hidden dimension.
             dropout: Dropout probability.
             num_classes: Number of output classes for classification.
+            positional_embedding: Type of positional embedding ('learned', 'none').
+            use_cls_token: Whether to use a class token. Default: True.
         """
         super(VisionTransformer, self).__init__()
 
-        self.patch_embedding = PatchEmbedding(img_size, patch_size, in_channels, embed_dim)
+        self.use_cls_token = use_cls_token
+
+        self.patch_embedding = PatchEmbedding(img_size, patch_size, in_channels, embed_dim, positional_embedding, use_cls_token)
 
         self.transformer_stack = nn.ModuleList(
-            [TransformerBlock(embed_dim, num_heads, mlp_ratio) for _ in range(num_layers)]
+            [TransformerBlock(embed_dim, num_heads, mlp_ratio, dropout) for _ in range(num_layers)]
         )
 
         self.classification_head = nn.Sequential(
@@ -198,7 +220,11 @@ class VisionTransformer(nn.Module):
         for transformer_block in self.transformer_stack:
             x = transformer_block(x)
 
-        cls_token = x[:, 0, :]
+        if self.use_cls_token:
+            cls_token = x[:, 0, :]
+        else:
+            cls_token = x.mean(dim=1, keepdim=True)
+
         out = self.classification_head(cls_token)
 
         return out
