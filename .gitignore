@@ -1,3 +1,6 @@
+# Data and artefacts
+data/
+
 # MacOS Finder metadata
 .DS_Store
 

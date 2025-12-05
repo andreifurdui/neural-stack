@@ -1,8 +1,12 @@
+import os
 import torch
 import torch.nn as nn
 
 from typing import Tuple
 from fvcore.nn import FlopCountAnalysis, ActivationCountAnalysis, flop_count_table
+
+def get_project_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def count_model_params(model: nn.Module):
     return sum(p.numel() for p in model.parameters())
