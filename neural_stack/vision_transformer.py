@@ -1,8 +1,183 @@
 import torch
 import torch.nn as nn
+
+from abc import ABC, abstractmethod
 from typing import Tuple
 
 from neural_stack.attention import MultiHeadAttention
+
+
+class PositionalEmbedding(nn.Module, ABC):
+    """Abstract base class for positional embeddings in Vision Transformers.
+
+    Provides a factory method to create different types of positional embeddings
+    and defines the interface that all implementations must follow.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @classmethod
+    def create(
+        cls,
+        positional_embedding_type: str,
+        img_size: Tuple[int, int],
+        patch_size: int,
+        embed_dim: int,
+        use_cls_token: bool
+    ) -> 'PositionalEmbedding':
+        """Factory method to create appropriate positional embedding instance.
+
+        Args:
+            positional_embedding_type: Type of positional embedding:
+                - 'learned-1d': Standard 1D learned positional embedding
+                - 'learned-2d': 2D factorized positional embedding (height/width)
+                - 'none': No positional embedding (identity operation)
+            img_size: Image dimensions as (height, width).
+            patch_size: Size of each square patch.
+            embed_dim: Embedding dimension.
+            use_cls_token: Whether a CLS token is prepended to patches.
+
+        Returns:
+            Instance of appropriate PositionalEmbedding subclass.
+
+        Raises:
+            ValueError: If positional_embedding_type is not supported.
+        """
+        num_patches_h = img_size[0] // patch_size
+        num_patches_w = img_size[1] // patch_size
+
+        if positional_embedding_type == 'learned-1d':
+            return PositionalEmbedding1D(
+                num_patches=num_patches_h * num_patches_w, 
+                embed_dim=embed_dim, 
+                use_cls_token=use_cls_token
+                )
+        elif positional_embedding_type == 'learned-2d':
+            return PositionalEmbedding2D(
+                num_patches=(num_patches_h, num_patches_w),
+                embed_dim=embed_dim,
+                use_cls_token=use_cls_token
+            )
+        elif positional_embedding_type == 'none':
+            return PositionalEmbeddingDummy()
+        else:
+            raise ValueError(f"Unsupported positional embedding type: {positional_embedding_type}")
+    
+    @abstractmethod
+    def forward(self, image_patches: torch.Tensor) -> torch.Tensor:
+        """Add positional information to image patches.
+
+        Args:
+            image_patches: Patch embeddings of shape [B, N, D] where:
+                - B: batch size
+                - N: number of patches (+ 1 if CLS token is used)
+                - D: embedding dimension
+
+        Returns:
+            Patches with positional encoding added, same shape [B, N, D].
+        """
+        pass
+    
+class PositionalEmbedding1D(PositionalEmbedding):
+    """Standard 1D learned positional embedding.
+
+    Uses a single learnable parameter tensor that is added to all patch embeddings.
+    This is the default approach used in the original ViT paper.
+    """
+
+    def __init__(self, num_patches: int, embed_dim: int, use_cls_token: bool) -> None:
+        """Initialize 1D positional embedding.
+
+        Args:
+            num_patches: Total number of patches.
+            embed_dim: Embedding dimension.
+            use_cls_token: Whether a CLS token is prepended (adds 1 to sequence length).
+        """
+        super().__init__()
+
+        self.use_cls_token = use_cls_token
+        cls_token_len = 1 if use_cls_token else 0
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + cls_token_len, embed_dim))
+
+    def forward(self, image_patches: torch.Tensor) -> torch.Tensor:
+        """Add 1D positional embedding to patches.
+
+        Args:
+            image_patches: Patch embeddings of shape [B, N, D].
+
+        Returns:
+            Patches with positional encoding, shape [B, N, D].
+        """
+        return image_patches + self.pos_embedding
+    
+class PositionalEmbedding2D(PositionalEmbedding):
+    """2D factorized positional embedding.
+
+    Learns separate positional embeddings for height and width dimensions,
+    then concatenates them. This reduces parameters compared to 1D while
+    preserving spatial information. Each dimension uses half the embedding size.
+    """
+
+    def __init__(self, num_patches: Tuple[int, int], embed_dim: int, use_cls_token: bool) -> None:
+        """Initialize 2D factorized positional embedding.
+
+        Args:
+            num_patches: Number of patches as (num_patches_h, num_patches_w).
+            embed_dim: Embedding dimension (must be even for splitting).
+            use_cls_token: Whether a CLS token is prepended.
+        """
+        super().__init__()
+        self.num_patches = num_patches
+        self.use_cls_token = use_cls_token
+
+        self.pos_embedding_h = nn.Parameter(torch.randn(1, num_patches[0], embed_dim // 2))
+        self.pos_embedding_w = nn.Parameter(torch.randn(1, num_patches[1], embed_dim // 2))
+        if use_cls_token:
+            self.pos_embedding_cls = nn.Parameter(torch.randn(1, 1, embed_dim))
+
+    def forward(self, image_patches: torch.Tensor) -> torch.Tensor:
+        """Add 2D factorized positional embedding to patches.
+
+        Reconstructs 2D positional embeddings by expanding height and width
+        embeddings to form a grid, then concatenating them along the feature dimension.
+
+        Args:
+            image_patches: Patch embeddings of shape [B, N, D].
+
+        Returns:
+            Patches with 2D positional encoding, shape [B, N, D].
+        """
+        pos_emb_h = self.pos_embedding_h.repeat_interleave(self.num_patches[1], dim=1)
+        pos_emb_w = self.pos_embedding_w.repeat(1, self.num_patches[0], 1)
+        pos_emb_2d = torch.concat((pos_emb_h, pos_emb_w), dim=2)
+        if self.use_cls_token:
+            pos_emb_2d = torch.concat((self.pos_embedding_cls, pos_emb_2d), dim=1)
+
+        return image_patches + pos_emb_2d
+    
+class PositionalEmbeddingDummy(PositionalEmbedding):
+    """No positional embedding (identity operation).
+
+    Returns patches unchanged, effectively removing all positional information.
+    Useful for ablation studies to test the importance of positional encoding.
+    """
+
+    def __init__(self) -> None:
+        """Initialize dummy positional embedding (no parameters)."""
+        super().__init__()
+
+    def forward(self, image_patches: torch.Tensor) -> torch.Tensor:
+        """Return patches unchanged (identity operation).
+
+        Args:
+            image_patches: Patch embeddings of shape [B, N, D].
+
+        Returns:
+            Same patches unchanged, shape [B, N, D].
+        """
+        return image_patches
+
 class PatchEmbedding(nn.Module):
     """Patch Embedding layer for Vision Transformer.
 
@@ -10,7 +185,7 @@ class PatchEmbedding(nn.Module):
     and adds positional embeddings and a class token.
     """
 
-    def __init__(self, img_size: Tuple[int, int], patch_size: int, in_channels: int, embed_dim: int, positional_embedding: str = 'learned', use_cls_token: bool = True) -> None:
+    def __init__(self, img_size: Tuple[int, int], patch_size: int, in_channels: int, embed_dim: int, positional_embedding: str = 'learned-1d', use_cls_token: bool = True) -> None:
         """Initialize the patch embedding layer.
 
         Args:
@@ -18,13 +193,12 @@ class PatchEmbedding(nn.Module):
             patch_size: Size of each square patch.
             in_channels: Number of input channels (e.g., 3 for RGB).
             embed_dim: Dimension of the embedding space.
-            positional_embedding: Type of positional embedding ('learned', 'none').
+            positional_embedding: Type of positional embedding ('learned-1d', 'learned-2d', 'none').
             use_cls_token: Whether to use a class token. Default: True.
         """
         super(PatchEmbedding, self).__init__()
 
         assert (img_size[0] * img_size[1]) % (patch_size ** 2) == 0, "Image dimensions must be divisible by the patch size."
-        assert positional_embedding in ['learned', 'none'], "Positional embedding must be either 'learned' or 'none'."
 
         self.img_size = img_size
         self.patch_size = patch_size
@@ -33,12 +207,13 @@ class PatchEmbedding(nn.Module):
         
         self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
 
-        cls_token_len = 1 if use_cls_token else 0
-
-        if positional_embedding == 'none':
-            self.pos_embedding = nn.Parameter(torch.zeros(1, self.num_patches + cls_token_len, embed_dim), requires_grad=False)
-        else:
-            self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches + cls_token_len, embed_dim))
+        self.pos_embedding = PositionalEmbedding.create(
+            positional_embedding_type=positional_embedding,
+            img_size=img_size,
+            patch_size=patch_size,
+            embed_dim=embed_dim,
+            use_cls_token=use_cls_token
+        )
 
         if use_cls_token:
             self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
@@ -61,7 +236,8 @@ class PatchEmbedding(nn.Module):
         
         if self.use_cls_token:
             image_patches = torch.concat((self.cls_token.repeat(batch_size, 1, 1), image_patches), dim=1)    # [B, num_patches + cls_token_len, embed_dim]
-        image_patches = image_patches + self.pos_embedding                      # [B, num_patches + cls_token_len, embed_dim]
+        
+        image_patches = self.pos_embedding(image_patches)       # [B, num_patches + cls_token_len, embed_dim]
 
         return image_patches
 
@@ -187,7 +363,7 @@ class VisionTransformer(nn.Module):
             mlp_ratio: Expansion ratio for MLP hidden dimension.
             dropout: Dropout probability.
             num_classes: Number of output classes for classification.
-            positional_embedding: Type of positional embedding ('learned', 'none').
+            positional_embedding: Type of positional embedding ('learned-1d', 'learned-2d', 'none').
             use_cls_token: Whether to use a class token. Default: True.
         """
         super(VisionTransformer, self).__init__()
