@@ -348,7 +348,7 @@ class VisionTransformer(nn.Module):
         mlp_ratio: float,
         dropout: float,
         num_classes: int,
-        positional_embedding: str = 'learned',
+        positional_embedding: str = 'learned-1d',
         use_cls_token: bool = True
     ) -> None:
         """Initialize the Vision Transformer.
