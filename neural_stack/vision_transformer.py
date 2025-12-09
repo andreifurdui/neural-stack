@@ -319,7 +319,9 @@ class TransformerBlock(nn.Module):
             x: Input tensor of shape [B, N, embed_dim]
 
         Returns:
-            Transformed tensor of shape [B, N, embed_dim]
+            Tuple of:
+                - Transformed tensor of shape [B, N, embed_dim]
+                - Attention scores from the multi-head attention layer of shape [B, num_heads, N, N].
         """
         x_norm = self.layer_norm_1(x)
 
@@ -328,7 +330,7 @@ class TransformerBlock(nn.Module):
 
         x = x + self.mlp_block(self.layer_norm_2(x))
 
-        return x
+        return x, x_att_scores
     
 class VisionTransformer(nn.Module):
     """Vision Transformer (ViT) for image classification.
@@ -382,19 +384,23 @@ class VisionTransformer(nn.Module):
             nn.Linear(embed_dim, num_classes)
         )
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def forward(self, images: torch.Tensor, return_attention: bool = False) -> torch.Tensor:
         """Apply Vision Transformer to input images.
 
         Args:
             images: Input images of shape [B, C, H, W]
+            return_attention: If True, returns attention scores from the last transformer block. Default: False.
 
         Returns:
-            Class logits of shape [B, num_classes]
+            Class logits of shape [B, num_classes] or tuple of (class logits, attention scores) if return_attention is True.
         """
         x = self.patch_embedding(images)
 
+        attn_scores_list = [] if return_attention else None
         for transformer_block in self.transformer_stack:
-            x = transformer_block(x)
+            x, attn_scores = transformer_block(x)
+            if return_attention:
+                attn_scores_list.append(attn_scores)
 
         if self.use_cls_token:
             cls_token = x[:, 0, :]
@@ -403,4 +409,6 @@ class VisionTransformer(nn.Module):
 
         out = self.classification_head(cls_token)
 
+        if return_attention:
+            return out, attn_scores_list
         return out
