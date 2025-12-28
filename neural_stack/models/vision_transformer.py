@@ -4,7 +4,7 @@ import torch.nn as nn
 from abc import ABC, abstractmethod
 from typing import Tuple
 
-from neural_stack.attention import MultiHeadAttention
+from neural_stack.models.attention import MultiHeadAttention
 
 
 class PositionalEmbedding(nn.Module, ABC):
