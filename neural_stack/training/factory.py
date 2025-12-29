@@ -222,7 +222,7 @@ def build_from_config(config: TrainConfig) -> Dict[str, Any]:
         Dictionary containing:
             - model: The constructed model
             - optimizer: Configured optimizer
-            - scheduler: LR scheduler (or None)
+            - lr_scheduler: LR scheduler (or None)
             - criterion: Loss function
 
     Example:
@@ -233,7 +233,7 @@ def build_from_config(config: TrainConfig) -> Dict[str, Any]:
             model=components["model"],
             optimizer=components["optimizer"],
             criterion=components["criterion"],
-            lr_scheduler=components["scheduler"],
+            lr_scheduler=components["lr_scheduler"],
             ...
         )
     """
@@ -245,7 +245,7 @@ def build_from_config(config: TrainConfig) -> Dict[str, Any]:
     return {
         "model": model,
         "optimizer": optimizer,
-        "scheduler": scheduler,
+        "lr_scheduler": scheduler,
         "criterion": criterion,
     }
 

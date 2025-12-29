@@ -143,10 +143,6 @@ class Trainer:
             val_metrics = self._validate()
             self.state.metrics.update({f"val/{k}": v for k, v in val_metrics.items()})
 
-        # LR scheduler step (epoch-level)
-        if self.lr_scheduler is not None:
-            self.lr_scheduler.step()
-
         self.callbacks.on_epoch_end(self.state)
 
     # =========================================================================

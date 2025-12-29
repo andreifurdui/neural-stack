@@ -306,6 +306,9 @@ class WandbCallback(Callback):
     Args:
         project: W&B project name.
         name: Run name (optional).
+        group: Run group (optional).
+        notes: Run notes (optional).
+        tags: List of tags for the run (optional).
         config: Configuration dict to log (optional).
         dir: Directory for W&B files (optional).
         log_every: Log batch metrics every N steps (1 = every step).
@@ -315,12 +318,18 @@ class WandbCallback(Callback):
         self,
         project: str,
         name: Optional[str] = None,
+        group: Optional[str] = None,
+        notes: Optional[str] = None,
+        tags: Optional[List[str]] = None,
         config: Optional[Dict[str, Any]] = None,
         dir: Optional[str] = None,
         log_every: int = 1,
     ):
         self.project = project
         self.name = name
+        self.group = group
+        self.notes = notes
+        self.tags = tags
         self.config = config
         self.dir = dir
         self.log_every = log_every
@@ -332,6 +341,9 @@ class WandbCallback(Callback):
             self.run = wandb.init(
                 project=self.project,
                 name=self.name,
+                group=self.group,
+                notes=self.notes,
+                tags=self.tags,
                 config=self.config,
                 dir=self.dir,
             )
@@ -364,8 +376,6 @@ class LRSchedulerCallback(Callback):
     """Learning rate scheduler callback.
 
     Steps the scheduler at the appropriate time (epoch or batch level).
-    This callback is optional - the Trainer can also handle scheduler
-    stepping directly.
 
     Args:
         step_on_batch: If True, step scheduler after each batch.

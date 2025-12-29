@@ -28,7 +28,7 @@ scheduler:
 
 data:
   dataset: cifar10
-  data_dir: ./data
+  data_dir: ../data
   batch_size: 128
   num_workers: 4
   pin_memory: true
@@ -38,9 +38,9 @@ data:
   crop_ratio: [0.9, 1.1]
 
 num_epochs: 25
-device: cuda
+device: cuda:0
 seed: 42
-checkpoint_dir: ./checkpoints
+checkpoint_dir: ../data/checkpoints
 save_best: true
 log_every: 50
 experiment_name: vit_cifar10_baseline

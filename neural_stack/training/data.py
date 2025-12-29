@@ -146,7 +146,7 @@ def build_datasets(
         - "mnist": MNIST digits (10 classes, 28x28 grayscale -> 32x32 RGB)
         - "fashion_mnist": Fashion-MNIST (10 classes, 28x28 grayscale -> 32x32 RGB)
     """
-    data_dir = Path(config.data_dir)
+    data_dir = Path(config.data_dir, config.dataset)
     data_dir.mkdir(parents=True, exist_ok=True)
 
     if config.dataset == "cifar10":
