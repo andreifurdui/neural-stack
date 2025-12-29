@@ -147,6 +147,7 @@ def build_scheduler(
     Supported schedulers:
         - "step": StepLR - decay by gamma every step_size epochs
         - "cosine": CosineAnnealingLR - cosine annealing to eta_min
+        - "cosine_warmup": CosineAnnealingWarmupLR - cosine annealing with warmup
         - "none": No scheduler (returns None)
     """
     if config.name == "none":
@@ -164,10 +165,20 @@ def build_scheduler(
             T_max=T_max,
             eta_min=config.eta_min,
         )
+    elif config.name == "cosine_warmup":
+        from neural_stack.training.schedulers import CosineAnnealingWarmupLR
+
+        T_max = config.T_max if config.T_max is not None else num_epochs
+        return CosineAnnealingWarmupLR(
+            optimizer,
+            T_max=T_max,
+            warmup_epochs=config.warmup_epochs,
+            eta_min=config.eta_min,
+        )
     else:
         raise ValueError(
             f"Unknown scheduler: '{config.name}'. "
-            f"Supported schedulers: 'step', 'cosine', 'none'"
+            f"Supported schedulers: 'step', 'cosine', 'cosine_warmup', 'none'"
         )
 
 

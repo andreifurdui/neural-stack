@@ -393,6 +393,15 @@ class LRSchedulerCallback(Callback):
         if not self.step_on_batch and self.trainer.lr_scheduler is not None:
             self.trainer.lr_scheduler.step()
 
+class LRSchedulerIterPatchCallback(Callback):
+    def on_train_begin(self, state: TrainState) -> None:
+        num_iters_per_epoch = len(self.trainer.train_loader)
+        try:
+            self.trainer.lr_scheduler.set_iters_per_epoch(num_iters_per_epoch)
+            print(f"Patched LR scheduler {self.trainer.lr_scheduler.__class__.__name__} with {num_iters_per_epoch} iters/epoch.")
+        except AttributeError:
+            print(f"Warning: LR scheduler {self.trainer.lr_scheduler.__class__.__name__} does not support set_iters_per_epoch().")
+            pass
 
 class ProgressCallback(Callback):
     """Progress bar callback using tqdm.

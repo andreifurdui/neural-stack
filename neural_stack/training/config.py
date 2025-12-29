@@ -93,13 +93,15 @@ class SchedulerConfig:
         step_size: Epochs between LR decay (for StepLR).
         gamma: LR decay factor (for StepLR).
         T_max: Maximum iterations for cosine annealing (defaults to num_epochs).
-        eta_min: Minimum LR for cosine annealing.
+        eta_min: Minimum LR for cosine annealing and warmup init.
+        warmup_epochs: Number of epochs for linear warmup.
     """
     name: str = "step"
     step_size: int = 12
     gamma: float = 0.1
     T_max: Optional[int] = None
-    eta_min: float = 0.0
+    eta_min: float = 1e-9
+    warmup_epochs: int = 3
 
 
 # =============================================================================

@@ -72,6 +72,7 @@ from neural_stack.training.callbacks import (
     EarlyStoppingCallback,
     WandbCallback,
     LRSchedulerCallback,
+    LRSchedulerIterPatchCallback,
     ProgressCallback,
 )
 
@@ -113,6 +114,7 @@ __all__ = [
     "EarlyStoppingCallback",
     "WandbCallback",
     "LRSchedulerCallback",
+    "LRSchedulerIterPatchCallback",
     "ProgressCallback",
     # Factories
     "build_model",
