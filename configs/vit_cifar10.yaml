@@ -35,6 +35,9 @@ data:
   random_crop: true
   crop_scale: [0.8, 1.0]
   crop_ratio: [0.9, 1.1]
+  rand_aug: true
+  rand_aug_num_ops: 2
+  rand_aug_magnitude: 9
 
 grad_clip_norm: 1.0
 use_amp: true

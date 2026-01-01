@@ -17,7 +17,7 @@ from typing import Tuple, Optional
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
+from torchvision.datasets import CIFAR10, CIFAR100
 
 from neural_stack.training.config import DataConfig
 
@@ -35,15 +35,7 @@ DATASET_STATS = {
     "cifar100": {
         "mean": (0.5071, 0.4867, 0.4408),
         "std": (0.2675, 0.2565, 0.2761),
-    },
-    "mnist": {
-        "mean": (0.1307,),
-        "std": (0.3081,),
-    },
-    "fashion_mnist": {
-        "mean": (0.2860,),
-        "std": (0.3530,),
-    },
+    }
 }
 
 
@@ -79,6 +71,12 @@ def build_cifar_transforms(
                 scale=config.crop_scale,
                 ratio=config.crop_ratio,
             ))
+        
+        if config.rand_aug:
+            transform_list.append(transforms.RandAugment(
+                num_ops=config.rand_aug_num_ops,
+                magnitude=config.rand_aug_magnitude
+            ))
 
         transform_list.extend([
             transforms.ToTensor(),
@@ -91,35 +89,6 @@ def build_cifar_transforms(
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
-
-
-def build_mnist_transforms(
-    config: DataConfig,
-    train: bool = True,
-) -> transforms.Compose:
-    """Build transforms for MNIST-like datasets.
-
-    Args:
-        config: Data configuration.
-        train: Whether this is for training.
-
-    Returns:
-        Composed transform pipeline.
-    """
-    stats = DATASET_STATS.get(config.dataset, DATASET_STATS["mnist"])
-    mean, std = stats["mean"], stats["std"]
-
-    # MNIST is 28x28, optionally resize to 32x32 for ViT compatibility
-    transform_list = [
-        transforms.Resize((32, 32)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ]
-
-    # Convert grayscale to RGB (3 channels) for compatibility with RGB models
-    transform_list.append(transforms.Lambda(lambda x: x.repeat(3, 1, 1)))
-
-    return transforms.Compose(transform_list)
 
 
 # =============================================================================
@@ -143,8 +112,6 @@ def build_datasets(
     Supported datasets:
         - "cifar10": CIFAR-10 (10 classes, 32x32 RGB)
         - "cifar100": CIFAR-100 (100 classes, 32x32 RGB)
-        - "mnist": MNIST digits (10 classes, 28x28 grayscale -> 32x32 RGB)
-        - "fashion_mnist": Fashion-MNIST (10 classes, 28x28 grayscale -> 32x32 RGB)
     """
     data_dir = Path(config.data_dir, config.dataset)
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -183,44 +150,10 @@ def build_datasets(
             download=True,
         )
 
-    elif config.dataset == "mnist":
-        train_transform = build_mnist_transforms(config, train=True)
-        test_transform = build_mnist_transforms(config, train=False)
-
-        train_dataset = MNIST(
-            root=str(data_dir),
-            train=True,
-            transform=train_transform,
-            download=True,
-        )
-        test_dataset = MNIST(
-            root=str(data_dir),
-            train=False,
-            transform=test_transform,
-            download=True,
-        )
-
-    elif config.dataset == "fashion_mnist":
-        train_transform = build_mnist_transforms(config, train=True)
-        test_transform = build_mnist_transforms(config, train=False)
-
-        train_dataset = FashionMNIST(
-            root=str(data_dir),
-            train=True,
-            transform=train_transform,
-            download=True,
-        )
-        test_dataset = FashionMNIST(
-            root=str(data_dir),
-            train=False,
-            transform=test_transform,
-            download=True,
-        )
-
     else:
         raise ValueError(
             f"Unknown dataset: '{config.dataset}'. "
-            f"Supported datasets: 'cifar10', 'cifar100', 'mnist', 'fashion_mnist'"
+            f"Supported datasets: 'cifar10', 'cifar100'"
         )
 
     return train_dataset, test_dataset
@@ -305,17 +238,7 @@ def get_dataset_info(dataset_name: str) -> dict:
             "num_classes": 100,
             "img_size": (32, 32),
             "in_channels": 3,
-        },
-        "mnist": {
-            "num_classes": 10,
-            "img_size": (32, 32),  # After resize
-            "in_channels": 3,      # After RGB conversion
-        },
-        "fashion_mnist": {
-            "num_classes": 10,
-            "img_size": (32, 32),  # After resize
-            "in_channels": 3,      # After RGB conversion
-        },
+        }
     }
 
     if dataset_name not in info:

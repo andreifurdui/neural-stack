@@ -122,6 +122,9 @@ class DataConfig:
         random_crop: Apply random crop augmentation.
         crop_scale: Scale range for random resized crop.
         crop_ratio: Aspect ratio range for random resized crop.
+        rand_aug: Whether to apply RandAugment.
+        rand_aug_num_ops: Number of augmentation operations for RandAugment.
+        rand_aug_magnitude: Magnitude for RandAugment operations.
     """
     dataset: str = "cifar10"
     data_dir: str = "./data"
@@ -132,6 +135,9 @@ class DataConfig:
     random_crop: bool = True
     crop_scale: Tuple[float, float] = (0.8, 1.0)
     crop_ratio: Tuple[float, float] = (0.9, 1.1)
+    rand_aug: bool = True
+    rand_aug_num_ops: int = 2
+    rand_aug_magnitude: int = 15
 
 
 # =============================================================================
