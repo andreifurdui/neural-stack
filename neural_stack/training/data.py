@@ -17,7 +17,7 @@ from typing import Tuple, Optional
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, CIFAR100
+from torchvision.datasets import CIFAR10, CIFAR100, FGVCAircraft
 
 from neural_stack.training.config import DataConfig
 
@@ -35,6 +35,10 @@ DATASET_STATS = {
     "cifar100": {
         "mean": (0.5071, 0.4867, 0.4408),
         "std": (0.2675, 0.2565, 0.2761),
+    },
+    "imagenet": {
+        "mean": (0.485, 0.456, 0.406),
+        "std": (0.229, 0.224, 0.225),
     }
 }
 
@@ -43,11 +47,12 @@ DATASET_STATS = {
 # Transform Builders
 # =============================================================================
 
-def build_cifar_transforms(
+def build_transforms(
     config: DataConfig,
+    img_size: Tuple[int, int],
     train: bool = True,
 ) -> transforms.Compose:
-    """Build transforms for CIFAR datasets.
+    """Build transforms for any supported dataset.
 
     Args:
         config: Data configuration.
@@ -56,7 +61,7 @@ def build_cifar_transforms(
     Returns:
         Composed transform pipeline.
     """
-    stats = DATASET_STATS.get(config.dataset, DATASET_STATS["cifar10"])
+    stats = DATASET_STATS.get(config.dataset, DATASET_STATS["imagenet"])
     mean, std = stats["mean"], stats["std"]
 
     if train:
@@ -67,7 +72,7 @@ def build_cifar_transforms(
 
         if config.random_crop:
             transform_list.append(transforms.RandomResizedCrop(
-                (32, 32),
+                img_size,
                 scale=config.crop_scale,
                 ratio=config.crop_ratio,
             ))
@@ -86,6 +91,7 @@ def build_cifar_transforms(
         return transforms.Compose(transform_list)
     else:
         return transforms.Compose([
+            transforms.Resize(img_size),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -97,11 +103,13 @@ def build_cifar_transforms(
 
 def build_datasets(
     config: DataConfig,
+    img_size: Tuple[int, int]
 ) -> Tuple[Dataset, Dataset]:
     """Build train and test datasets from configuration.
 
     Args:
         config: Data configuration specifying dataset and transforms.
+        img_size: Expected image size (H, W) for the model.
 
     Returns:
         Tuple of (train_dataset, test_dataset).
@@ -112,13 +120,14 @@ def build_datasets(
     Supported datasets:
         - "cifar10": CIFAR-10 (10 classes, 32x32 RGB)
         - "cifar100": CIFAR-100 (100 classes, 32x32 RGB)
+        - "fgvc-aircraft": FGVC-Aircraft (100 classes, variable size RGB)
     """
     data_dir = Path(config.data_dir, config.dataset)
     data_dir.mkdir(parents=True, exist_ok=True)
 
     if config.dataset == "cifar10":
-        train_transform = build_cifar_transforms(config, train=True)
-        test_transform = build_cifar_transforms(config, train=False)
+        train_transform = build_transforms(config, img_size, train=True)
+        test_transform = build_transforms(config, img_size, train=False)
 
         train_dataset = CIFAR10(
             root=str(data_dir),
@@ -134,8 +143,8 @@ def build_datasets(
         )
 
     elif config.dataset == "cifar100":
-        train_transform = build_cifar_transforms(config, train=True)
-        test_transform = build_cifar_transforms(config, train=False)
+        train_transform = build_transforms(config, img_size, train=True)
+        test_transform = build_transforms(config, img_size, train=False)
 
         train_dataset = CIFAR100(
             root=str(data_dir),
@@ -149,11 +158,28 @@ def build_datasets(
             transform=test_transform,
             download=True,
         )
+    
+    elif config.dataset == "fgvc-aircraft":
+        train_transform = build_transforms(config, img_size, train=True)
+        test_transform = build_transforms(config, img_size, train=False)
+
+        train_dataset = FGVCAircraft(
+            root=str(data_dir),
+            split='train',
+            transform=train_transform,
+            download=True,
+        )
+        test_dataset = FGVCAircraft(
+            root=str(data_dir),
+            split='val',
+            transform=test_transform,
+            download=True,
+        )
 
     else:
         raise ValueError(
             f"Unknown dataset: '{config.dataset}'. "
-            f"Supported datasets: 'cifar10', 'cifar100'"
+            f"Supported datasets: 'cifar10', 'cifar100', 'fgvc-aircraft'."
         )
 
     return train_dataset, test_dataset
@@ -161,12 +187,14 @@ def build_datasets(
 
 def build_dataloaders(
     config: DataConfig,
+    img_size: Tuple[int, int],
     val_split: Optional[float] = None,
 ) -> Tuple[DataLoader, DataLoader]:
     """Build train and validation/test dataloaders from configuration.
 
     Args:
         config: Data configuration.
+        img_size: Expected image size (H, W) for the model.
         val_split: If provided, split training set into train/val with this
                   ratio for validation (e.g., 0.1 = 10% validation).
                   If None, returns train and test loaders.
@@ -174,7 +202,7 @@ def build_dataloaders(
     Returns:
         Tuple of (train_loader, val_or_test_loader).
     """
-    train_dataset, test_dataset = build_datasets(config)
+    train_dataset, test_dataset = build_datasets(config, img_size)
 
     # Optionally split training data for validation
     if val_split is not None and 0 < val_split < 1:
@@ -238,7 +266,12 @@ def get_dataset_info(dataset_name: str) -> dict:
             "num_classes": 100,
             "img_size": (32, 32),
             "in_channels": 3,
-        }
+        },
+        "fgvc-aircraft": {
+            "num_classes": 100,
+            "img_size": (224, 224),
+            "in_channels": 3,
+        },
     }
 
     if dataset_name not in info:

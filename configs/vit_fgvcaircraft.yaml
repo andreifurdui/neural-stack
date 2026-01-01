@@ -1,0 +1,51 @@
+# Vision Transformer on CIFAR-10
+# Example configuration for training a small ViT model
+
+model:
+  name: vit
+  img_size: [224, 224]
+  patch_size: 32
+  in_channels: 3
+  embed_dim: 384
+  num_heads: 6
+  num_layers: 12
+  mlp_ratio: 4.0
+  dropout: 0.1
+  num_classes: 100
+  positional_embedding: learned-1d
+  use_cls_token: true
+
+optimizer:
+  name: adamw
+  lr: 0.0003
+  weight_decay: 0.03
+  betas: [0.9, 0.999]
+
+scheduler:
+  name: cosine_warmup
+  warmup_epochs: 5
+
+data:
+  dataset: fgvc-aircraft
+  data_dir: ../data
+  batch_size: 128
+  num_workers: 6
+  pin_memory: true
+  random_horizontal_flip: true
+  random_crop: true
+  crop_scale: [0.8, 1.0]
+  crop_ratio: [0.9, 1.1]
+  rand_aug: true
+  rand_aug_num_ops: 2
+  rand_aug_magnitude: 9
+
+grad_clip_norm: 1.0
+use_amp: true
+
+num_epochs: 100
+device: cuda:0
+seed: 42
+checkpoint_dir: ../data/checkpoints
+save_best: true
+log_every: 50
+experiment_name: vit_cifar10_baseline
