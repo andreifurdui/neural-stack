@@ -51,6 +51,7 @@ class Trainer:
         device: Device to train on ("cuda", "cpu", "mps").
         num_epochs: Number of training epochs.
         grad_clip_norm: Optional max norm for gradient clipping.
+        use_amp: Whether to use automatic mixed precision.
 
     Attributes:
         model: The model being trained.
@@ -75,7 +76,8 @@ class Trainer:
         callbacks: Optional[List[Callback]] = None,
         device: str = "cuda",
         num_epochs: int = 10,
-        grad_clip_norm: Optional[float] = None
+        grad_clip_norm: Optional[float] = None,
+        use_amp: bool = False
     ):
         self.model = model
         self.optimizer = optimizer
@@ -86,7 +88,10 @@ class Trainer:
         self.device = torch.device(device)
         self.num_epochs = num_epochs
 
+        # Training stabilization
         self.grad_clip_norm = grad_clip_norm
+        self.use_amp = use_amp
+        self.grad_scaler = torch.amp.GradScaler(self.device, enabled=use_amp)
 
         # Move model to device
         self.model.to(self.device)
@@ -216,17 +221,19 @@ class Trainer:
         targets = targets.to(self.device)
 
         # Forward pass
-        outputs = self.forward(inputs)
-        loss = self.compute_loss(outputs, targets)
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.use_amp):
+            outputs = self.forward(inputs)
+            loss = self.compute_loss(outputs, targets)
 
         # Backward pass
         self.optimizer.zero_grad()
-        loss.backward()
-
+        self.grad_scaler.scale(loss).backward()
         if self.grad_clip_norm is not None:
+            self.grad_scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
-
-        self.optimizer.step()
+        
+        self.grad_scaler.step(self.optimizer)
+        self.grad_scaler.update()
 
         # Compute batch metrics
         with torch.no_grad():

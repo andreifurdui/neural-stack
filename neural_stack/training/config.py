@@ -163,6 +163,7 @@ class TrainConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     data: DataConfig = field(default_factory=DataConfig)
 
+    use_amp: bool = False 
     grad_clip_norm: Optional[float] = None
 
     num_epochs: int = 25

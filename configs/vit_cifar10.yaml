@@ -37,6 +37,7 @@ data:
   crop_ratio: [0.9, 1.1]
 
 grad_clip_norm: 1.0
+use_amp: true
 
 num_epochs: 25
 device: cuda:0
