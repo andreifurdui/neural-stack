@@ -50,6 +50,7 @@ class Trainer:
         callbacks: List of callback instances.
         device: Device to train on ("cuda", "cpu", "mps").
         num_epochs: Number of training epochs.
+        grad_clip_norm: Optional max norm for gradient clipping.
 
     Attributes:
         model: The model being trained.
@@ -74,6 +75,7 @@ class Trainer:
         callbacks: Optional[List[Callback]] = None,
         device: str = "cuda",
         num_epochs: int = 10,
+        grad_clip_norm: Optional[float] = None
     ):
         self.model = model
         self.optimizer = optimizer
@@ -83,6 +85,8 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
         self.device = torch.device(device)
         self.num_epochs = num_epochs
+
+        self.grad_clip_norm = grad_clip_norm
 
         # Move model to device
         self.model.to(self.device)
@@ -218,6 +222,10 @@ class Trainer:
         # Backward pass
         self.optimizer.zero_grad()
         loss.backward()
+
+        if self.grad_clip_norm is not None:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
+
         self.optimizer.step()
 
         # Compute batch metrics

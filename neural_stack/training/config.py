@@ -163,6 +163,8 @@ class TrainConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     data: DataConfig = field(default_factory=DataConfig)
 
+    grad_clip_norm: Optional[float] = None
+
     num_epochs: int = 25
     device: str = "cuda"
     seed: Optional[int] = 42
