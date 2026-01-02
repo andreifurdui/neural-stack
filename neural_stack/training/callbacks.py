@@ -65,6 +65,7 @@ class TrainState:
 
     should_stop: bool = False
 
+    best_checkpoint: Optional[Path] = None
 
 # =============================================================================
 # Base Callback
@@ -201,7 +202,7 @@ class CheckpointCallback(Callback):
         mode: str = "max",
         save_every: Optional[int] = None,
     ):
-        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir = Path(checkpoint_dir, "checkpoints")
         self.save_best = save_best
         self.monitor = monitor
         self.mode = mode
@@ -211,6 +212,7 @@ class CheckpointCallback(Callback):
 
     def on_train_begin(self, state: TrainState) -> None:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        state.best_checkpoint = self.checkpoint_dir / "best.pt"
 
     def on_epoch_end(self, state: TrainState) -> None:
         # Save periodic checkpoint
@@ -326,6 +328,7 @@ class WandbCallback(Callback):
         config: Optional[Dict[str, Any]] = None,
         dir: Optional[str] = None,
         log_every: int = 1,
+        log_best_checkpoint: bool = True
     ):
         self.project = project
         self.name = name
@@ -335,6 +338,7 @@ class WandbCallback(Callback):
         self.config = config
         self.dir = dir
         self.log_every = log_every
+        self.log_best_checkpoint = log_best_checkpoint
         self.run = None
 
     def on_train_begin(self, state: TrainState) -> None:
@@ -371,8 +375,13 @@ class WandbCallback(Callback):
         self.run.log(state.metrics, step=state.global_step)
 
     def on_train_end(self, state: TrainState) -> None:
-        if self.run is not None:
-            self.run.finish()
+        if self.run is None:
+            return
+        
+        if self.log_best_checkpoint:
+            self.run.save(state.best_checkpoint)
+        
+        self.run.finish()
 
 
 class LRSchedulerCallback(Callback):
