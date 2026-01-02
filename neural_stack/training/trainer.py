@@ -182,6 +182,7 @@ class Trainer:
             loss, batch_metrics = self.train_step(batch)
 
             self.state.loss = loss.item()
+            self.state.grad_norm = batch_metrics["grad_norm"]
             self.state.global_step += 1
 
             # Accumulate metrics
@@ -228,19 +229,30 @@ class Trainer:
         # Backward pass
         self.optimizer.zero_grad()
         self.grad_scaler.scale(loss).backward()
+
+        # Unscale gradients before clipping
+        self.grad_scaler.unscale_(self.optimizer)
+
+        # Gradient clipping
+        total_grad_norm = nn.utils.get_total_norm([p.grad for p in self.model.parameters() if p.grad is not None])
         if self.grad_clip_norm is not None:
-            self.grad_scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
-        
+            nn.utils.clip_grads_with_norm_(self.model.parameters(), self.grad_clip_norm, total_grad_norm)
+
+        # Optimizer step
         self.grad_scaler.step(self.optimizer)
         self.grad_scaler.update()
 
         # Compute batch metrics
+        batch_metrics: Dict[str, Any] = {}
         with torch.no_grad():
             predictions = outputs.argmax(dim=1)
             correct = (predictions == targets).sum().item()
+            
+            batch_metrics["correct"] = correct
+            batch_metrics["total"] = len(targets)
+            batch_metrics["grad_norm"] = total_grad_norm.item()
 
-        return loss, {"correct": correct, "total": len(targets)}
+        return loss, batch_metrics
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """Model forward pass.

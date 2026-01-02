@@ -46,6 +46,7 @@ class TrainState:
         global_step: Total training steps completed.
         batch_idx: Current batch index within epoch.
         loss: Loss from the most recent batch.
+        grad_norm: Gradient norm from the most recent batch.
         metrics: Dictionary of metrics from current epoch.
         best_metric: Best value of monitored metric so far.
         best_epoch: Epoch when best metric was achieved.
@@ -56,6 +57,7 @@ class TrainState:
     batch_idx: int = 0
 
     loss: float = 0.0
+    grad_norm: float = 0.0
     metrics: Dict[str, float] = field(default_factory=dict)
 
     best_metric: float = 0.0
@@ -359,6 +361,7 @@ class WandbCallback(Callback):
             self.run.log({
                 "train/loss": state.loss,
                 "train/lr": self.trainer.optimizer.param_groups[0]["lr"],
+                "train/grad_norm": state.grad_norm
             }, step=state.global_step)
 
     def on_epoch_end(self, state: TrainState) -> None:
