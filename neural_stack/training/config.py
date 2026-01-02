@@ -135,7 +135,12 @@ class DataConfig:
     random_crop: bool = True
     crop_scale: Tuple[float, float] = (0.8, 1.0)
     crop_ratio: Tuple[float, float] = (0.9, 1.1)
-    rand_aug: bool = True
+    color_jitter: bool = False
+    jit_brightness: float = 0.4
+    jit_contrast: float = 0.4
+    jit_saturation: float = 0.4
+    jit_hue: float = 0.1
+    rand_aug: bool = False
     rand_aug_num_ops: int = 2
     rand_aug_magnitude: int = 15
 

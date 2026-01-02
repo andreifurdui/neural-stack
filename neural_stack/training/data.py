@@ -76,6 +76,14 @@ def build_transforms(
                 scale=config.crop_scale,
                 ratio=config.crop_ratio,
             ))
+
+        if config.color_jitter:
+            transform_list.append(transforms.ColorJitter(
+                brightness=config.jit_brightness,
+                contrast=config.jit_contrast,
+                saturation=config.jit_saturation,
+                hue=config.jit_hue,
+            ))
         
         if config.rand_aug:
             transform_list.append(transforms.RandAugment(
