@@ -74,6 +74,7 @@ from neural_stack.training.callbacks import (
     LRSchedulerCallback,
     LRSchedulerIterPatchCallback,
     ProgressCallback,
+    FreezeModelLayersCallback,
 )
 
 # Factories
@@ -116,6 +117,7 @@ __all__ = [
     "LRSchedulerCallback",
     "LRSchedulerIterPatchCallback",
     "ProgressCallback",
+    "FreezeModelLayersCallback",
     # Factories
     "build_model",
     "build_optimizer",

@@ -473,3 +473,41 @@ class ProgressCallback(Callback):
     def on_train_end(self, state: TrainState) -> None:
         if self._epoch_pbar is not None:
             self._epoch_pbar.close()
+
+class FreezeModelLayersCallback(Callback):
+    """Callback to freeze model layers for transfer learning.
+
+    Freezes specified layers at the start of training.
+    Provide either names of layers to freeze or names of layers to not freeze.
+
+    Args:
+        freeze_layers: List of layer names substrings to freeze.
+        dont_freeze_layers: List of layer names substrings to not freeze.
+    """
+    def __init__(
+        self,
+        freeze_layers: Optional[List[str]] = None,
+        dont_freeze_layers: Optional[List[str]] = None,
+    ):
+        if freeze_layers is not None and dont_freeze_layers is not None:
+            raise ValueError("Provide either freeze_layers or dont_freeze_layers, not both.")
+        
+        self.freeze_layers = freeze_layers or []
+        self.dont_freeze_layers = dont_freeze_layers or []
+
+    def on_train_begin(self, state: TrainState) -> None:
+        layers_to_freeze = set()
+        for name, param in self.trainer.model.named_parameters():
+            if self.freeze_layers and any(substr in name for substr in self.freeze_layers):
+                layers_to_freeze.add(name)
+            elif self.dont_freeze_layers and not any(substr in name for substr in self.dont_freeze_layers):
+                layers_to_freeze.add(name)
+        
+        for name, param in self.trainer.model.named_parameters():
+            if name in layers_to_freeze:
+                param.requires_grad = False
+
+        print(f"Froze {len(layers_to_freeze)} layers out of {len(list(self.trainer.model.named_parameters()))}.")
+        print("Frozen layers:")
+        for name in sorted(layers_to_freeze):
+            print(f"  - {name}")

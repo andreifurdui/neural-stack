@@ -32,6 +32,8 @@ class ModelConfig:
 
     Attributes:
         name: Model type identifier (e.g., "vit", "resnet").
+        source: Model source ("custom", "timm").
+        pretrained: Whether to use pretrained weights.
         img_size: Input image dimensions as (height, width).
         patch_size: Size of each patch for ViT models.
         in_channels: Number of input channels.
@@ -45,6 +47,8 @@ class ModelConfig:
         use_cls_token: Whether to use a CLS token for classification.
     """
     name: str = "vit"
+    source: str = "custom"
+    pretrained: bool = False
     img_size: Tuple[int, int] = (32, 32)
     patch_size: int = 8
     in_channels: int = 3

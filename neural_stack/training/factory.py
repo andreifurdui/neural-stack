@@ -17,6 +17,7 @@ Example:
 
 from typing import Dict, Any, Optional
 
+import timm
 import torch
 import torch.nn as nn
 
@@ -47,27 +48,40 @@ def build_model(config: ModelConfig) -> nn.Module:
     Supported models:
         - "vit": Vision Transformer (neural_stack.models.vision_transformer)
     """
-    if config.name == "vit":
-        from neural_stack.models.vision_transformer import VisionTransformer
+    if config.source == "custom":
+        if config.name == "vit":
+            from neural_stack.models.vision_transformer import VisionTransformer
 
-        return VisionTransformer(
-            img_size=config.img_size,
-            patch_size=config.patch_size,
-            in_channels=config.in_channels,
-            embed_dim=config.embed_dim,
-            num_heads=config.num_heads,
-            num_layers=config.num_layers,
-            mlp_ratio=config.mlp_ratio,
-            dropout=config.dropout,
-            num_classes=config.num_classes,
-            positional_embedding=config.positional_embedding,
-            use_cls_token=config.use_cls_token,
-        )
-    else:
-        raise ValueError(
-            f"Unknown model: '{config.name}'. "
-            f"Supported models: 'vit'"
-        )
+            return VisionTransformer(
+                img_size=config.img_size,
+                patch_size=config.patch_size,
+                in_channels=config.in_channels,
+                embed_dim=config.embed_dim,
+                num_heads=config.num_heads,
+                num_layers=config.num_layers,
+                mlp_ratio=config.mlp_ratio,
+                dropout=config.dropout,
+                num_classes=config.num_classes,
+                positional_embedding=config.positional_embedding,
+                use_cls_token=config.use_cls_token,
+            )
+        else:
+            raise ValueError(
+                f"Unknown model: '{config.name}'. "
+                f"Supported models: 'vit'"
+            )
+    elif config.source == "timm":
+        try:
+            model = timm.create_model(
+                config.name,
+                pretrained=config.pretrained,
+                num_classes=config.num_classes,
+            )
+            return model
+        except Exception as e:
+            raise ValueError(
+                f"Error creating timm model '{config.name}': {e}"
+            ) from e
 
 
 # =============================================================================
