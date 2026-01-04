@@ -24,7 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+import re
 import torch
+import torch.nn as nn
 
 if TYPE_CHECKING:
     from neural_stack.training.trainer import Trainer
@@ -474,40 +476,206 @@ class ProgressCallback(Callback):
         if self._epoch_pbar is not None:
             self._epoch_pbar.close()
 
-class FreezeModelLayersCallback(Callback):
-    """Callback to freeze model layers for transfer learning.
+class FreezeCallback(Callback):
+    """Unified callback for freezing model layers with multiple strategies.
 
-    Freezes specified layers at the start of training.
-    Provide either names of layers to freeze or names of layers to not freeze.
+    Supports depth-based, pattern-based, and type-based freezing.
+    Automatically recreates optimizer to reflect trainable parameter changes.
 
     Args:
-        freeze_layers: List of layer names substrings to freeze.
-        dont_freeze_layers: List of layer names substrings to not freeze.
+        freeze_first_n: Freeze first N modules in ModuleList structures.
+        freeze_last_n: Freeze last N modules in ModuleList structures.
+        freeze_embeddings: Freeze all embedding layers.
+        freeze_head: Freeze classification head.
+        freeze_patterns: List of regex patterns for layers to freeze.
+        unfreeze_patterns: List of regex patterns for layers to unfreeze (takes precedence).
+        freeze_types: List of module types to freeze (e.g., [nn.Dropout, nn.LayerNorm]).
+        keep_batchnorm_trainable: Keep BatchNorm layers trainable even if frozen.
+        verbose: Print detailed summary of frozen parameters.
+
+    Example:
+        # Simple: Freeze first 3 transformer blocks
+        FreezeCallback(freeze_first_n=3)
+
+        # Transfer learning: Freeze backbone, train head
+        FreezeCallback(
+            freeze_embeddings=True,
+            freeze_first_n=12,
+            unfreeze_patterns=[r'.*head.*']
+        )
     """
+
     def __init__(
         self,
-        freeze_layers: Optional[List[str]] = None,
-        dont_freeze_layers: Optional[List[str]] = None,
+        freeze_first_n: Optional[int] = None,
+        freeze_last_n: Optional[int] = None,
+        freeze_embeddings: bool = False,
+        freeze_head: bool = False,
+        freeze_patterns: Optional[List[str]] = None,
+        unfreeze_patterns: Optional[List[str]] = None,
+        freeze_types: Optional[List] = None,
+        keep_batchnorm_trainable: bool = True,
+        verbose: bool = True,
     ):
-        if freeze_layers is not None and dont_freeze_layers is not None:
-            raise ValueError("Provide either freeze_layers or dont_freeze_layers, not both.")
-        
-        self.freeze_layers = freeze_layers or []
-        self.dont_freeze_layers = dont_freeze_layers or []
+        self.freeze_first_n = freeze_first_n
+        self.freeze_last_n = freeze_last_n
+        self.freeze_embeddings = freeze_embeddings
+        self.freeze_head = freeze_head
+        self.freeze_patterns = freeze_patterns or []
+        self.unfreeze_patterns = unfreeze_patterns or []
+        self.freeze_types = freeze_types or []
+        self.keep_batchnorm_trainable = keep_batchnorm_trainable
+        self.verbose = verbose
 
     def on_train_begin(self, state: TrainState) -> None:
-        layers_to_freeze = set()
-        for name, param in self.trainer.model.named_parameters():
-            if self.freeze_layers and any(substr in name for substr in self.freeze_layers):
-                layers_to_freeze.add(name)
-            elif self.dont_freeze_layers and not any(substr in name for substr in self.dont_freeze_layers):
-                layers_to_freeze.add(name)
-        
-        for name, param in self.trainer.model.named_parameters():
-            if name in layers_to_freeze:
+        """Apply freezing at the start of training."""
+        model = self.trainer.model
+
+        # Apply freezing strategies in order
+        self._freeze_by_depth(model)
+        self._freeze_by_pattern(model, re)
+        self._freeze_by_type(model)
+
+        # Special handling
+        if self.keep_batchnorm_trainable:
+            self._handle_batchnorm(model, nn)
+
+        # Recreate optimizer with new trainable params
+        self._recreate_optimizer(self.trainer)
+
+        # Report
+        if self.verbose:
+            self._report_frozen_params(model)
+
+    def _freeze_by_depth(self, model) -> None:
+        """Freeze layers by depth (for ModuleList structures)."""
+        import torch.nn as nn
+
+        # Find ModuleList containers (e.g., transformer_stack)
+        for name, module in model.named_modules():
+            if isinstance(module, (nn.ModuleList, nn.Sequential)):
+                # Freeze first N
+                if self.freeze_first_n is not None:
+                    for i in range(min(self.freeze_first_n, len(module))):
+                        for param in module[i].parameters():
+                            param.requires_grad = False
+
+                # Freeze last N
+                if self.freeze_last_n is not None:
+                    for i in range(max(0, len(module) - self.freeze_last_n), len(module)):
+                        for param in module[i].parameters():
+                            param.requires_grad = False
+
+        # Freeze embeddings (common pattern in transformers)
+        if self.freeze_embeddings:
+            for name, module in model.named_modules():
+                if 'embed' in name.lower():
+                    for param in module.parameters():
+                        param.requires_grad = False
+
+        # Freeze head (classification layer)
+        if self.freeze_head:
+            for name, module in model.named_modules():
+                if 'head' in name.lower() or 'classifier' in name.lower():
+                    for param in module.parameters():
+                        param.requires_grad = False
+
+    def _freeze_by_pattern(self, model, re) -> None:
+        """Freeze/unfreeze using regex patterns."""
+        freeze_regexes = [re.compile(p) for p in self.freeze_patterns]
+        unfreeze_regexes = [re.compile(p) for p in self.unfreeze_patterns]
+
+        for name, param in model.named_parameters():
+            # Check freeze patterns
+            if any(regex.match(name) for regex in freeze_regexes):
                 param.requires_grad = False
 
-        print(f"Froze {len(layers_to_freeze)} layers out of {len(list(self.trainer.model.named_parameters()))}.")
-        print("Frozen layers:")
-        for name in sorted(layers_to_freeze):
-            print(f"  - {name}")
+            # Unfreeze patterns take precedence
+            if any(regex.match(name) for regex in unfreeze_regexes):
+                param.requires_grad = True
+
+    def _freeze_by_type(self, model) -> None:
+        """Freeze all parameters in modules of specified types."""
+        if not self.freeze_types:
+            return
+
+        for module in model.modules():
+            if any(isinstance(module, freeze_type) for freeze_type in self.freeze_types):
+                for param in module.parameters():
+                    param.requires_grad = False
+
+    def _handle_batchnorm(self, model, nn) -> None:
+        """Keep BatchNorm layers trainable even if frozen."""
+        for module in model.modules():
+            if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+                for param in module.parameters():
+                    param.requires_grad = True
+
+    def _recreate_optimizer(self, trainer) -> None:
+        """Recreate optimizer with current trainable parameters.
+
+        Critical: Optimizers capture trainable params at creation time.
+        When freezing/unfreezing, we MUST recreate the optimizer.
+        """
+        # Extract optimizer config
+        OptimClass = type(trainer.optimizer)
+        state_dict = trainer.optimizer.state_dict()
+
+        # Get current optimizer hyperparams (only valid constructor args)
+        old_param_group = trainer.optimizer.param_groups[0]
+
+        # Whitelist of common optimizer hyperparameters
+        # These are the typical constructor args for PyTorch optimizers
+        valid_hyperparams = {
+            'lr', 'weight_decay', 'momentum', 'dampening', 'nesterov',  # SGD
+            'betas', 'eps', 'amsgrad',  # Adam/AdamW
+            'alpha', 'centered',  # RMSprop
+            'rho',  # Adadelta
+        }
+
+        optim_kwargs = {
+            k: v for k, v in old_param_group.items()
+            if k in valid_hyperparams
+        }
+
+        # Get only trainable params
+        trainable_params = [p for p in trainer.model.parameters() if p.requires_grad]
+
+        # Recreate optimizer
+        trainer.optimizer = OptimClass(trainable_params, **optim_kwargs)
+
+        # Patch scheduler's optimizer reference to point to new optimizer
+        if trainer.lr_scheduler is not None:
+            trainer.lr_scheduler.optimizer = trainer.optimizer
+
+        # Try to restore optimizer state for params that are still being trained
+        # (This will partially fail if params changed, which is expected)
+        try:
+            trainer.optimizer.load_state_dict(state_dict)
+        except (KeyError, ValueError):
+            # Expected when trainable params change
+            if self.verbose:
+                print("  Note: Optimizer state reset due to parameter changes")
+
+    def _report_frozen_params(self, model) -> None:
+        """Print detailed summary of frozen vs trainable parameters."""
+        frozen_params = [(n, p) for n, p in model.named_parameters() if not p.requires_grad]
+        trainable_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+
+        frozen_count = sum(p.numel() for _, p in frozen_params)
+        trainable_count = sum(p.numel() for _, p in trainable_params)
+        total_count = frozen_count + trainable_count
+
+        print("\n" + "="*60)
+        print("Model Freezing Summary")
+        print("="*60)
+        print(f"Frozen:     {frozen_count:>12,} params ({frozen_count/total_count*100:>5.1f}%)")
+        print(f"Trainable:  {trainable_count:>12,} params ({trainable_count/total_count*100:>5.1f}%)")
+        print(f"Total:      {total_count:>12,} params")
+
+        if frozen_params:
+            print(f"\nFrozen layers ({len(frozen_params)}):")
+            for name, param in frozen_params:
+                print(f"  - {name:<50} {param.numel():>10,} params")
+
+        print("="*60 + "\n")
